@@ -645,9 +645,7 @@ impl<'a> Generator<'a> {
                     let mut expr_buf = Buffer::new(0);
                     let wrapped = self.visit_expr(&mut expr_buf, s);
                     let expression = match (wrapped, &self.input.escaping) {
-                        (Wrapped, &Html) | (Wrapped, &None) | (Unwrapped, &None) => {
-                            expr_buf.buf
-                        }
+                        (Wrapped, &Html) | (Wrapped, &None) | (Unwrapped, &None) => expr_buf.buf,
                         (Unwrapped, &Html) => {
                             format!("::askama::MarkupDisplay::from(&{})", expr_buf.buf)
                         }
