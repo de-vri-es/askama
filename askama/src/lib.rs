@@ -410,12 +410,12 @@ use std::path::Path;
 pub trait Template {
     /// Helper method which allocates a new `String` and renders into it
     fn render(&self) -> Result<String> {
-        let mut buf = String::new();
+        let mut buf = Vec::new();
         self.render_into(&mut buf)?;
-        Ok(buf)
+        Ok(unsafe { String::from_utf8_unchecked(buf) })
     }
     /// Renders the template to the given `writer` buffer
-    fn render_into(&self, writer: &mut std::fmt::Write) -> Result<()>;
+    fn render_into<W: io::Write>(&self, writer: &mut W) -> Result<()>;
     /// Helper function to inspect the template's extension
     fn extension() -> Option<&'static str>
     where

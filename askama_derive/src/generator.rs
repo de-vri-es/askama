@@ -99,7 +99,7 @@ impl<'a> Generator<'a> {
     fn impl_template(&mut self, ctx: &'a Context, buf: &mut Buffer) {
         self.write_header(buf, "::askama::Template", None);
         buf.writeln(
-            "fn render_into(&self, writer: &mut ::std::fmt::Write) -> \
+            "fn render_into<W: ::std::io::Write>(&self, writer: &mut W) -> \
              ::askama::Result<()> {",
         );
 
@@ -140,7 +140,8 @@ impl<'a> Generator<'a> {
     fn impl_display(&mut self, buf: &mut Buffer) {
         self.write_header(buf, "::std::fmt::Display", None);
         buf.writeln("fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {");
-        buf.writeln("::askama::Template::render_into(self, f).map_err(|_| ::std::fmt::Error {})");
+        buf.writeln("let s = ::askama::Template::render(self).map_err(|_| ::std::fmt::Error {})?;");
+        buf.writeln("f.write_str(&s)");
         buf.writeln("}");
         buf.writeln("}");
     }
@@ -627,7 +628,7 @@ impl<'a> Generator<'a> {
                     buf_lit.write(s);
                 };
             }
-            buf.writeln(&format!("writer.write_str({:#?})?;", &buf_lit.buf));
+            buf.writeln(&format!("writer.write(b{:#?})?;", &buf_lit.buf));
             return;
         }
 

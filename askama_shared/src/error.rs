@@ -1,5 +1,6 @@
 use std::error::Error as ErrorTrait;
 use std::fmt::{self, Display};
+use std::io;
 
 pub type Result<I> = ::std::result::Result<I, Error>;
 
@@ -28,6 +29,9 @@ pub enum Error {
     /// formatting error
     Fmt(fmt::Error),
 
+    /// I/O error
+    Io(io::Error),
+
     /// json conversion error
     #[cfg(feature = "serde-json")]
     Json(::serde_json::Error),
@@ -43,6 +47,7 @@ impl ErrorTrait for Error {
     fn description(&self) -> &str {
         match *self {
             Error::Fmt(ref err) => err.description(),
+            Error::Io(ref err) => err.description(),
             #[cfg(feature = "serde-json")]
             Error::Json(ref err) => err.description(),
             _ => "unknown error: __Nonexhaustive",
@@ -52,6 +57,7 @@ impl ErrorTrait for Error {
     fn cause(&self) -> Option<&ErrorTrait> {
         match *self {
             Error::Fmt(ref err) => err.cause(),
+            Error::Io(ref err) => err.cause(),
             #[cfg(feature = "serde-json")]
             Error::Json(ref err) => err.cause(),
             _ => None,
@@ -63,7 +69,7 @@ impl Display for Error {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             Error::Fmt(ref err) => write!(formatter, "formatting error: {}", err),
-
+            Error::Io(ref err) => write!(formatter, "I/O error: {}", err),
             #[cfg(feature = "serde-json")]
             Error::Json(ref err) => write!(formatter, "json conversion error: {}", err),
             _ => write!(formatter, "unknown error: __Nonexhaustive"),
@@ -71,9 +77,9 @@ impl Display for Error {
     }
 }
 
-impl From<fmt::Error> for Error {
-    fn from(err: fmt::Error) -> Self {
-        Error::Fmt(err)
+impl From<io::Error> for Error {
+    fn from(err: io::Error) -> Self {
+        Error::Io(err)
     }
 }
 
