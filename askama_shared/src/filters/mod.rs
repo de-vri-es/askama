@@ -11,7 +11,7 @@ mod json;
 pub use self::json::json;
 
 use crate::error::Error::Fmt;
-use askama_escape::MarkupDisplay;
+use askama_escape::{MarkupDisplay, OutputFormat};
 use humansize::{file_size_opts, FileSize};
 use num_traits::cast::NumCast;
 use num_traits::Signed;
@@ -52,31 +52,38 @@ pub const BUILT_IN_FILTERS: [&str; 22] = [
 ///
 /// Use this is you want to allow markup in an expression, or if you know
 /// that the expression's contents don't need to be escaped.
-pub fn safe<D, I>(v: I) -> Result<MarkupDisplay<D>>
+///
+/// Askama will automatically insert the first (`OutputFormat`) argument,
+/// so this filter only takes a single argument of any type that implements
+/// `Display`.
+pub fn safe<D, O>(o: O, v: D) -> Result<MarkupDisplay<D, O>>
 where
     D: fmt::Display,
-    MarkupDisplay<D>: From<I>,
+    O: OutputFormat,
 {
-    let res: MarkupDisplay<D> = v.into();
-    Ok(res.mark_safe())
+    Ok(MarkupDisplay::new_safe(v, o))
 }
 
 /// Escapes `&`, `<` and `>` in strings
-pub fn escape<D, I>(i: I) -> Result<MarkupDisplay<D>>
+///
+/// Askama will automatically insert the first (`OutputFormat`) argument,
+/// so this filter only takes a single argument of any type that implements
+/// `Display`.
+pub fn escape<D, O>(o: O, v: D) -> Result<MarkupDisplay<D, O>>
 where
     D: fmt::Display,
-    MarkupDisplay<D>: From<I>,
+    O: OutputFormat,
 {
-    Ok(i.into())
+    Ok(MarkupDisplay::new_unsafe(v, o))
 }
 
 /// Alias for the `escape()` filter
-pub fn e<D, I>(i: I) -> Result<MarkupDisplay<D>>
+pub fn e<D, O>(o: O, v: D) -> Result<MarkupDisplay<D, O>>
 where
     D: fmt::Display,
-    MarkupDisplay<D>: From<I>,
+    O: OutputFormat,
 {
-    escape(i)
+    escape(o, v)
 }
 
 /// Returns adequate string representation (in KB, ..) of number of bytes

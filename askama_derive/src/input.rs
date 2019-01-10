@@ -14,7 +14,7 @@ pub struct TemplateInput<'a> {
     pub syntax: &'a Syntax<'a>,
     pub source: Source,
     pub print: Print,
-    pub escaping: EscapeMode,
+    pub escaping: &'a str,
     pub ext: Option<String>,
     pub parent: Option<&'a syn::Type>,
     pub path: PathBuf,
@@ -90,7 +90,7 @@ impl<'a> TemplateInput<'a> {
                         }
                         "escape" => {
                             if let syn::Lit::Str(ref s) = pair.lit {
-                                escaping = Some(s.value().into());
+                                escaping = Some(s.value());
                             } else {
                                 panic!("escape value must be string literal");
                             }
@@ -155,12 +155,24 @@ impl<'a> TemplateInput<'a> {
             },
         );
 
+        let escaping = escaping.unwrap_or_else(|| {
+            path.extension()
+                .map(|s| s.to_str().unwrap())
+                .unwrap_or("none")
+                .to_string()
+        });
+        let escaping = match escaping.as_str() {
+            "html" | "htm" | "xml" => "::askama::Html",
+            "txt" | "none" => "::askama::Text",
+            val => panic!("unknown value '{}' for escape mode", val),
+        };
+
         TemplateInput {
             ast,
             config,
             source,
             print,
-            escaping: escaping.unwrap_or_else(|| EscapeMode::from_path(&path)),
+            escaping,
             ext,
             parent,
             path,
@@ -172,34 +184,6 @@ impl<'a> TemplateInput<'a> {
 pub enum Source {
     Path(String),
     Source(String),
-}
-
-#[derive(PartialEq)]
-pub enum EscapeMode {
-    Html,
-    None,
-}
-
-impl From<String> for EscapeMode {
-    fn from(s: String) -> EscapeMode {
-        use self::EscapeMode::*;
-        match s.as_ref() {
-            "html" => Html,
-            "none" => None,
-            v => panic!("invalid value for escape option: {}", v),
-        }
-    }
-}
-
-impl EscapeMode {
-    fn from_path(path: &PathBuf) -> EscapeMode {
-        let extension = path.extension().map(|s| s.to_str().unwrap()).unwrap_or("");
-        if HTML_EXTENSIONS.contains(&extension) {
-            EscapeMode::Html
-        } else {
-            EscapeMode::None
-        }
-    }
 }
 
 #[derive(PartialEq)]
@@ -222,5 +206,3 @@ impl From<String> for Print {
         }
     }
 }
-
-const HTML_EXTENSIONS: [&str; 3] = ["html", "htm", "xml"];

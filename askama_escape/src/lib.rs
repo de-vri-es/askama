@@ -2,8 +2,17 @@ use std::fmt::{self, Display, Formatter};
 use std::io::{self, prelude::*};
 use std::str;
 
+pub struct MarkupDisplay<T, O>
+where
+    T: Display,
+    O: OutputFormat,
+{
+    value: DisplayValue<T>,
+    out: O,
+}
+
 #[derive(Debug, PartialEq)]
-pub enum MarkupDisplay<T>
+enum DisplayValue<T>
 where
     T: Display,
 {
@@ -11,49 +20,67 @@ where
     Unsafe(T),
 }
 
-impl<T> MarkupDisplay<T>
+impl<T, O> MarkupDisplay<T, O>
 where
     T: Display,
+    O: OutputFormat,
 {
-    pub fn mark_safe(self) -> MarkupDisplay<T> {
-        match self {
-            MarkupDisplay::Unsafe(t) => MarkupDisplay::Safe(t),
-            _ => self,
+    pub fn new_unsafe(value: T, out: O) -> Self {
+        Self {
+            value: DisplayValue::Unsafe(value),
+            out,
+        }
+    }
+
+    pub fn new_safe(value: T, out: O) -> Self {
+        Self {
+            value: DisplayValue::Safe(value),
+            out,
+        }
+    }
+
+    pub fn mark_safe(mut self) -> MarkupDisplay<T, O> {
+        self.value = match self.value {
+            DisplayValue::Unsafe(t) => DisplayValue::Safe(t),
+            _ => self.value,
+        };
+        self
+    }
+}
+
+impl<T, O> Display for MarkupDisplay<T, O>
+where
+    T: Display,
+    O: OutputFormat,
+{
+    fn fmt(&self, fmt: &mut Formatter<'_>) -> fmt::Result {
+        match self.value {
+            DisplayValue::Unsafe(ref t) => write!(
+                EscapeWriter {
+                    fmt,
+                    out: &self.out
+                },
+                "{}",
+                t
+            )
+            .map_err(|_| fmt::Error),
+            DisplayValue::Safe(ref t) => t.fmt(fmt),
         }
     }
 }
 
-impl<T> From<T> for MarkupDisplay<T>
-where
-    T: Display,
-{
-    fn from(t: T) -> MarkupDisplay<T> {
-        MarkupDisplay::Unsafe(t)
-    }
-}
-
-impl<T> Display for MarkupDisplay<T>
-where
-    T: Display,
-{
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match *self {
-            MarkupDisplay::Unsafe(ref t) => {
-                let mut w = EscapeWriter { fmt: f };
-                write!(w, "{}", t).map_err(|_e| fmt::Error)
-            }
-            MarkupDisplay::Safe(ref t) => t.fmt(f),
-        }
-    }
-}
-
-pub struct EscapeWriter<'a, 'b: 'a> {
+pub struct EscapeWriter<'a, 'b: 'a, O> {
     fmt: &'a mut fmt::Formatter<'b>,
+    out: &'a O,
 }
 
-impl io::Write for EscapeWriter<'_, '_> {
+impl<O> io::Write for EscapeWriter<'_, '_, O>
+where
+    O: OutputFormat,
+{
     fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-        write_escaped_str(self.fmt, bytes)
+        self.out
+            .write_escaped_bytes(self.fmt, bytes)
             .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
         Ok(bytes.len())
     }
@@ -63,9 +90,13 @@ impl io::Write for EscapeWriter<'_, '_> {
     }
 }
 
-pub fn escape(s: &str) -> Escaped<'_> {
+pub fn escape<O>(s: &str, out: O) -> Escaped<'_, O>
+where
+    O: OutputFormat,
+{
     Escaped {
         bytes: s.as_bytes(),
+        out,
     }
 }
 
@@ -79,33 +110,55 @@ macro_rules! escaping_body {
     }};
 }
 
-pub struct Escaped<'a> {
+pub struct Escaped<'a, O>
+where
+    O: OutputFormat,
+{
     bytes: &'a [u8],
+    out: O,
 }
 
-impl<'a> ::std::fmt::Display for Escaped<'a> {
+impl<'a, O> ::std::fmt::Display for Escaped<'a, O>
+where
+    O: OutputFormat,
+{
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write_escaped_str(fmt, self.bytes)
+        self.out.write_escaped_bytes(fmt, self.bytes)
     }
 }
 
-fn write_escaped_str(fmt: &mut fmt::Formatter<'_>, bytes: &[u8]) -> fmt::Result {
-    let mut start = 0;
-    for (i, b) in bytes.iter().enumerate() {
-        if b.wrapping_sub(b'"') <= FLAG {
-            match *b {
-                b'<' => escaping_body!(start, i, fmt, bytes, "&lt;"),
-                b'>' => escaping_body!(start, i, fmt, bytes, "&gt;"),
-                b'&' => escaping_body!(start, i, fmt, bytes, "&amp;"),
-                b'"' => escaping_body!(start, i, fmt, bytes, "&quot;"),
-                b'\'' => escaping_body!(start, i, fmt, bytes, "&#x27;"),
-                b'/' => escaping_body!(start, i, fmt, bytes, "&#x2f;"),
-                _ => (),
+pub struct Html;
+
+impl OutputFormat for Html {
+    fn write_escaped_bytes(&self, fmt: &mut fmt::Formatter<'_>, bytes: &[u8]) -> fmt::Result {
+        let mut start = 0;
+        for (i, b) in bytes.iter().enumerate() {
+            if b.wrapping_sub(b'"') <= FLAG {
+                match *b {
+                    b'<' => escaping_body!(start, i, fmt, bytes, "&lt;"),
+                    b'>' => escaping_body!(start, i, fmt, bytes, "&gt;"),
+                    b'&' => escaping_body!(start, i, fmt, bytes, "&amp;"),
+                    b'"' => escaping_body!(start, i, fmt, bytes, "&quot;"),
+                    b'\'' => escaping_body!(start, i, fmt, bytes, "&#x27;"),
+                    b'/' => escaping_body!(start, i, fmt, bytes, "&#x2f;"),
+                    _ => (),
+                }
             }
         }
+        fmt.write_str(unsafe { str::from_utf8_unchecked(&bytes[start..]) })
     }
-    fmt.write_str(unsafe { str::from_utf8_unchecked(&bytes[start..]) })?;
-    Ok(())
+}
+
+pub struct Text;
+
+impl OutputFormat for Text {
+    fn write_escaped_bytes(&self, fmt: &mut fmt::Formatter<'_>, bytes: &[u8]) -> fmt::Result {
+        fmt.write_str(unsafe { str::from_utf8_unchecked(bytes) })
+    }
+}
+
+pub trait OutputFormat {
+    fn write_escaped_bytes(&self, fmt: &mut fmt::Formatter<'_>, bytes: &[u8]) -> fmt::Result;
 }
 
 const FLAG: u8 = b'>' - b'"';
@@ -115,10 +168,10 @@ mod tests {
     use super::*;
     #[test]
     fn test_escape() {
-        assert_eq!(escape("").to_string(), "");
-        assert_eq!(escape("<&>").to_string(), "&lt;&amp;&gt;");
-        assert_eq!(escape("bla&").to_string(), "bla&amp;");
-        assert_eq!(escape("<foo").to_string(), "&lt;foo");
-        assert_eq!(escape("bla&h").to_string(), "bla&amp;h");
+        assert_eq!(escape("", Html).to_string(), "");
+        assert_eq!(escape("<&>", Html).to_string(), "&lt;&amp;&gt;");
+        assert_eq!(escape("bla&", Html).to_string(), "bla&amp;");
+        assert_eq!(escape("<foo", Html).to_string(), "&lt;foo");
+        assert_eq!(escape("bla&h", Html).to_string(), "bla&amp;h");
     }
 }
