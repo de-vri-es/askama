@@ -4,6 +4,7 @@ extern crate serde_derive;
 
 use toml;
 
+use std::collections::HashSet;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -23,6 +24,7 @@ pub struct Config<'a> {
     pub dirs: Vec<PathBuf>,
     pub syntaxes: BTreeMap<String, Syntax<'a>>,
     pub default_syntax: &'a str,
+    pub escape_modes: Vec<(HashSet<String>, String)>,
 }
 
 impl<'a> Config<'a> {
@@ -63,10 +65,24 @@ impl<'a> Config<'a> {
             panic!("default syntax \"{}\" not found", default_syntax)
         }
 
+        let mut escape_modes = Vec::new();
+        if let Some(modes) = raw.escape_mode {
+            for mode in modes {
+                escape_modes.push((
+                    mode.extensions.iter().map(|ext| ext.to_string()).collect(),
+                    mode.format.to_string(),
+                ));
+            }
+        }
+        for (extensions, format) in DEFAULT_ESCAPE_MODES {
+            escape_modes.push((str_set(extensions), format.to_string()));
+        }
+
         Config {
             dirs,
             syntaxes,
             default_syntax,
+            escape_modes,
         }
     }
 
@@ -156,6 +172,7 @@ struct RawConfig<'d> {
     #[serde(borrow)]
     general: Option<General<'d>>,
     syntax: Option<Vec<RawSyntax<'d>>>,
+    escape_mode: Option<Vec<RawEscapeMode<'d>>>,
 }
 
 #[derive(Deserialize)]
@@ -176,6 +193,12 @@ struct RawSyntax<'a> {
     comment_end: Option<&'a str>,
 }
 
+#[derive(Deserialize)]
+struct RawEscapeMode<'a> {
+    format: &'a str,
+    extensions: Vec<&'a str>,
+}
+
 pub fn read_config_file() -> String {
     let root = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
     let filename = root.join(CONFIG_FILE_NAME);
@@ -187,8 +210,19 @@ pub fn read_config_file() -> String {
     }
 }
 
+fn str_set<T>(vals: &[T]) -> HashSet<String>
+where
+    T: ToString,
+{
+    vals.iter().map(|s| s.to_string()).collect()
+}
+
 static CONFIG_FILE_NAME: &str = "askama.toml";
 static DEFAULT_SYNTAX_NAME: &str = "default";
+static DEFAULT_ESCAPE_MODES: &[(&[&str], &str)] = &[
+    (&["html", "htm", "xml"], "::askama::Html"),
+    (&["none", "txt", ""], "::askama::Text"),
+];
 
 #[cfg(test)]
 mod tests {
@@ -349,5 +383,24 @@ mod tests {
         "#;
 
         let _config = Config::new(raw_config);
+    }
+
+    #[test]
+    fn escape_modes() {
+        let config = Config::new(
+            r#"
+            [[escape_mode]]
+            format = "::askama::Js"
+            extensions = ["js"]
+        "#,
+        );
+        assert_eq!(
+            config.escape_modes,
+            vec![
+                (str_set(&["js"]), "::askama::Js".into()),
+                (str_set(&["html", "htm", "xml"]), "::askama::Html".into()),
+                (str_set(&["none", "txt", ""]), "::askama::Text".into()),
+            ]
+        );
     }
 }

@@ -155,17 +155,26 @@ impl<'a> TemplateInput<'a> {
             },
         );
 
-        let escaping = escaping.unwrap_or_else(|| {
+        // Match extension against defined output formats
+
+        let extension = escaping.unwrap_or_else(|| {
             path.extension()
                 .map(|s| s.to_str().unwrap())
-                .unwrap_or("none")
+                .unwrap_or("")
                 .to_string()
         });
-        let escaping = match escaping.as_str() {
-            "html" | "htm" | "xml" => "::askama::Html",
-            "txt" | "none" => "::askama::Text",
-            val => panic!("unknown value '{}' for escape mode", val),
-        };
+
+        let mut escaping = None;
+        for (extensions, format) in &config.escape_modes {
+            if extensions.contains(&extension) {
+                escaping = Some(format);
+                break;
+            }
+        }
+
+        let escaping = escaping.unwrap_or_else(|| {
+            panic!("no output format defined for extension '{}'", extension);
+        });
 
         TemplateInput {
             ast,
