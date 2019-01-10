@@ -11,15 +11,6 @@ where
     out: O,
 }
 
-#[derive(Debug, PartialEq)]
-enum DisplayValue<T>
-where
-    T: Display,
-{
-    Safe(T),
-    Unsafe(T),
-}
-
 impl<T, O> MarkupDisplay<T, O>
 where
     T: Display,
@@ -100,16 +91,6 @@ where
     }
 }
 
-macro_rules! escaping_body {
-    ($start:ident, $i:ident, $fmt:ident, $bytes:ident, $quote:expr) => {{
-        if $start < $i {
-            $fmt.write_str(unsafe { str::from_utf8_unchecked(&$bytes[$start..$i]) })?;
-        }
-        $fmt.write_str($quote)?;
-        $start = $i + 1;
-    }};
-}
-
 pub struct Escaped<'a, O>
 where
     O: OutputFormat,
@@ -128,6 +109,16 @@ where
 }
 
 pub struct Html;
+
+macro_rules! escaping_body {
+    ($start:ident, $i:ident, $fmt:ident, $bytes:ident, $quote:expr) => {{
+        if $start < $i {
+            $fmt.write_str(unsafe { str::from_utf8_unchecked(&$bytes[$start..$i]) })?;
+        }
+        $fmt.write_str($quote)?;
+        $start = $i + 1;
+    }};
+}
 
 impl OutputFormat for Html {
     fn write_escaped_bytes(&self, fmt: &mut fmt::Formatter<'_>, bytes: &[u8]) -> fmt::Result {
@@ -155,6 +146,15 @@ impl OutputFormat for Text {
     fn write_escaped_bytes(&self, fmt: &mut fmt::Formatter<'_>, bytes: &[u8]) -> fmt::Result {
         fmt.write_str(unsafe { str::from_utf8_unchecked(bytes) })
     }
+}
+
+#[derive(Debug, PartialEq)]
+enum DisplayValue<T>
+where
+    T: Display,
+{
+    Safe(T),
+    Unsafe(T),
 }
 
 pub trait OutputFormat {
